@@ -1,0 +1,50 @@
+name: Daily S&P 500 Insight
+
+on:
+  schedule:
+    - cron: "0 9 * * *"  # every day at 9:00 UTC
+  workflow_dispatch:     # allows manual run if needed
+
+jobs:
+  update-rss:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate daily insight
+        run: |
+          RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
+            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "gpt-4.1-mini",
+              "messages": [{
+                "role": "user",
+                "content": "Every day at 9:00, give me a short S&P 500 update. Include: how the S&P 500 moved, one macro factor that matters, one short interpretation for a long-term investor. Keep it concise, no hype."
+              }]
+            }' | jq -r '.choices[0].message.content')
+
+          DATE=$(date -R)
+
+          cat > sp500.xml <<EOF
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+<channel>
+<title>Daily S&amp;P 500 Insight</title>
+<item>
+<title>S&amp;P 500 – Daily Insight</title>
+<description><![CDATA[$RESPONSE]]></description>
+<pubDate>$DATE</pubDate>
+</item>
+</channel>
+</rss>
+EOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add sp500.xml
+          git commit -m "Daily S&P 500 update" || exit 0
+          git push
